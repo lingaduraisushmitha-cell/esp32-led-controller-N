@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 Exact Pie Segment Grid</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 650px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #333; margin-bottom: 5px; }
+        .subtitle { color: #777; font-size: 14px; margin-bottom: 25px; }
+        
+        /* 8x8 Grid Configuration */
+        .matrix-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 12px; max-width: 500px; margin: 0 auto 30px auto; }
+        
+        /* SVG Circle Setup - Clean Circular Outline matching your image */
+        .led-svg { width: 100%; height: auto; transition: transform 0.1s ease; }
+        .led-svg:hover { transform: scale(1.1); cursor: pointer; }
+        
+        /* Outer Thick Black Rim and Internal Dark Borders */
+        .outer-border { fill: none; stroke: #000000; stroke-width: 3; }
+        .segment { stroke: #000000; stroke-width: 3; stroke-linejoin: round; transition: fill 0.2s ease; }
+
+        /* Default Off State - Plain Soft Light Gray */
+        .segment.r-seg { fill: #e0e0e0; }
+        .segment.g-seg { fill: #e0e0e0; }
+        .segment.b-seg { fill: #e0e0e0; }
+
+        /* Active Vibrant Colors exactly from your uploaded image template */
+        .segment.r-active { fill: #e31e24; } /* Bold Red */
+        .segment.g-active { fill: #22af4b; } /* Deep Green */
+        .segment.b-active { fill: #3f51b5; } /* Solid Blue */
+
+        /* Control UI Layout */
+        .legend-box { text-align: left; background: #fafafa; padding: 15px; border-radius: 10px; border: 1px solid #eaeaea; margin-top: 20px; }
+        .legend-title { font-weight: bold; margin-bottom: 10px; color: #444; }
+        .legend-item { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 14px; color: #555; }
+        .color-indicator { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1px solid #000; }
+        
+        /* Master Panel Controls */
+        .master-controls { display: flex; gap: 10px; margin-top: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+        .global-controls { display: flex; gap: 10px; margin-top: 15px; }
+        
+        .btn-action { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; text-transform: uppercase; transition: opacity 0.2s; }
+        .btn-action:hover { opacity: 0.9; }
+        
+        .btn-r-master { background-color: #e31e24; border: 1px solid #000; }
+        .btn-g-master { background-color: #22af4b; border: 1px solid #000; }
+        .btn-b-master { background-color: #3f51b5; border: 1px solid #000; }
+        .btn-off-master { background-color: #333333; }
+        
+        .btn-start { background-color: #8e44ad; }
+        .btn-stop { background-color: #7f8c8d; }
+        .btn-reset-all { width: 100%; background: white; border: 1px solid #e31e24; color: #e31e24; padding: 12px; font-size: 16px; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 15px; transition: all 0.2s; }
+        .btn-reset-all:hover { background: #e31e24; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>ESP32-S3 RGB LED Controller</h2>
+    <div class="subtitle">ALL LED WITH 3 COLOUR</div>
+
+    <!-- 8x8 Interactive Grid matching your precise sample image structure -->
+    <div class="matrix-grid" id="matrixGrid"></div>
+
+    <!-- Info & Legend Box -->
+    <div class="legend-box">
+        <div class="legend-title">Legend & Master Panel</div>
+        <div class="legend-item" style="color:#777; font-size:13px; margin-bottom:12px;">👇 Click on individual segments. Multiple colors can turn ON together!</div>
+        <div class="legend-item"><span class="color-indicator" style="background:#e31e24"></span> R — Red</div>
+        <div class="legend-item"><span class="color-indicator" style="background:#22af4b"></span> G — Green</div>
+        <div class="legend-item"><span class="color-indicator" style="background:#3f51b5"></span> B — Blue</div>
+        
+        <!-- Master Buttons -->
+        <div class="master-controls">
+            <button class="btn-action btn-r-master" onclick="masterColor('r')">All Red</button>
+            <button class="btn-action btn-g-master" onclick="masterColor('g')">All Green</button>
+            <button class="btn-action btn-b-master" onclick="masterColor('b')">All Blue</button>
+            <button class="btn-action btn-off-master" onclick="masterColor('off')">All Off</button>
+        </div>
+
+        <div class="global-controls">
+            <button class="btn-action btn-start" onclick="sendGlobal('start')">Start Blink</button>
+            <button class="btn-action btn-stop" onclick="sendGlobal('stop')">Stop Blink</button>
+        </div>
+        <button class="btn-reset-all" onclick="resetGrid()">Reset All LEDs</button>
+    </div>
+</div>
+
+<script>
+    // உங்களோட ESP32 IP அட்ரஸை மட்டும் இங்க கரெக்ட்டா மாத்திக்கோங்க
+    const esp32_ip = "http://192.168.0.30"; 
+    const totalLeds = 64;
+    const gridContainer = document.getElementById('matrixGrid');
+
+    // Array to track independent states
+    const ledStates = Array.from({ length: totalLeds }, () => ({ r: 0, g: 0, b: 0 }));
+
+    // Exact Pie chart math coordinates with prominent black lines matching your layout
+    for (let i = 0; i < totalLeds; i++) {
+        const svgHTML = `
+            <svg viewBox="0 0 100 100" class="led-svg" id="led-${i}">
+                <!-- Left Slice (Red) -->
+                <path class="segment r-seg" d="M 50,50 L 15.8,13.4 A 48,48 0 0,0 15.8,86.6 Z" onclick="toggleSegment(${i}, 'r')"/>
+                <!-- Bottom Right Slice (Blue) -->
+                <path class="segment b-seg" d="M 50,50 L 15.8,86.6 A 48,48 0 0,0 95.1,66.4 Z" onclick="toggleSegment(${i}, 'b')"/>
+                <!-- Top Right Slice (Green) -->
+                <path class="segment g-seg" d="M 50,50 L 95.1,66.4 A 48,48 0 0,0 15.8,13.4 Z" onclick="toggleSegment(${i}, 'g')"/>
+                <!-- Outer Thick Black Outline Circuit -->
+                <circle cx="50" cy="50" r="48" class="outer-border"/>
+            </svg>
+        `;
+        gridContainer.insertAdjacentHTML('beforeend', svgHTML);
+    }
+
+    // Toggle segment logic
+    function toggleSegment(ledId, color) {
+        const svgEl = document.getElementById(`led-${ledId}`);
+        const segment = svgEl.querySelector(`.${color}-seg`);
+        const isActive = segment.classList.contains(`${color}-active`);
+        
+        if (isActive) {
+            segment.classList.remove(`${color}-active`);
+            ledStates[ledId][color] = 0;
+        } else {
+            segment.classList.add(`${color}-active`);
+            ledStates[ledId][color] = 255;
+        }
+
+        const state = ledStates[ledId];
+        fetch(`${esp32_ip}/setled?id=${ledId}&color=${state.r},${state.g},${state.b}`, { mode: 'no-cors' })
+            .catch(err => console.error(err));
+    }
+
+    // Master trigger keeping structural states synchronous
+    function masterColor(colorTarget) {
+        document.querySelectorAll('.segment').forEach(seg => {
+            if (colorTarget === 'off') {
+                seg.classList.remove('r-active', 'g-active', 'b-active');
+            } else if (seg.classList.contains(`${colorTarget}-seg`)) {
+                seg.classList.add(`${colorTarget}-active`);
+            }
+        });
+
+        for (let i = 0; i < totalLeds; i++) {
+            if (colorTarget === 'off') {
+                ledStates[i] = { r: 0, g: 0, b: 0 };
+            } else {
+                ledStates[i][colorTarget] = 255;
+            }
+            const state = ledStates[i];
+            fetch(`${esp32_ip}/setled?id=${i}&color=${state.r},${state.g},${state.b}`, { mode: 'no-cors' })
+                .catch(err => console.error(err));
+        }
+    }
+
+    function sendGlobal(cmd) {
+        fetch(`${esp32_ip}/${cmd}`, { mode: 'no-cors' });
+    }
+
+    function resetGrid() {
+        document.querySelectorAll('.segment').forEach(seg => {
+            seg.classList.remove('r-active', 'g-active', 'b-active');
+        });
+        for (let i = 0; i < totalLeds; i++) {
+            ledStates[i] = { r: 0, g: 0, b: 0 };
+        }
+        sendGlobal('reset');
+    }
+</script>
+</body>
+</html>
